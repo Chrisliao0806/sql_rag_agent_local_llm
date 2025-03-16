@@ -16,7 +16,6 @@ class State(TypedDict):
     documents: List[str]
     query: str
     result: str
-    answer: str
     generation: str
 
 
