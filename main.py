@@ -1,6 +1,7 @@
 import argparse
 import logging
 from utils.logger import setup_logging
+from rag_sql_chain import RetrieveBot
 
 
 def parse_arguments():
@@ -47,6 +48,12 @@ def parse_arguments():
         help="The path to the PDF file.",
     )
     parser.add_argument(
+        "--chroma-file",
+        default="data/chroma_db",
+        type=str,
+        help="The path to the chroma database.",
+    )
+    parser.add_argument(
         "--model",
         default="qwen2.5:7b",
         type=str,
@@ -72,3 +79,13 @@ if __name__ == "__main__":
     args = parse_arguments()
     setup_logging(log_level=args.log_level)
     logging.info("Parsed command-line arguments")
+    sql_retrieve = RetrieveBot(
+        db_uri=args.db_uri,
+        pdf_file=args.pdf_file,
+        chroma_file=args.chroma_file,
+        model=args.model,
+    )
+    output_answer, token = sql_retrieve.workflow(query=args.question)
+    logging.info("Answer: %s", output_answer)
+    logging.info("Token: %s", token)
+    logging.info("Completed")
