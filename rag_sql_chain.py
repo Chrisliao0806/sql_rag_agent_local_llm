@@ -1,5 +1,6 @@
 import os
 import logging
+from dotenv import load_dotenv
 
 from langchain import hub
 from langchain.text_splitter import RecursiveCharacterTextSplitter
@@ -12,7 +13,8 @@ from langchain_core.runnables.graph import MermaidDrawMethod
 from langchain_core.prompts import ChatPromptTemplate
 from langchain_core.output_parsers import StrOutputParser
 from langchain_ollama import ChatOllama
-from langgraph.graph import START, StateGraph
+from langgraph.graph import START, END, StateGraph
+from langchain_community.tools.tavily_search import TavilySearchResults
 from langchain_community.vectorstores import Chroma
 from utils.choose_state import (
     QueryOutput,
@@ -28,9 +30,11 @@ from utils.prompt import (
     INSTRUCTIONRAG,
     INSTRUCTIONWEB,
     INSTRUCTIONWEBRAG,
-    INSTRUCTIONRAGORPLAIN,
     INSTRUCTIONCLASSIFY,
 )
+
+load_dotenv()
+os.environ["TAVILY_API_KEY"] = os.getenv("TAVILY_API_KEY")
 
 
 class RetrieveBot:
@@ -84,9 +88,11 @@ class RetrieveBot:
             self.llm_chain,
             self.web_chain,
             self.question_router,
-            self.question_router_rag_or_plain,
             self.question_router_classify,
         ) = self._init_model()
+        self.web_search_tool = TavilySearchResults(
+            include_answer=True,
+        )
 
     def _init_model(self):
         """
@@ -120,13 +126,6 @@ class RetrieveBot:
                 ("human", "問題: {question}"),
             ]
         )
-        route_prompt_rag_or_plain = ChatPromptTemplate.from_messages(
-            [
-                ("system", INSTRUCTIONRAGORPLAIN),
-                ("system", "文件: \n\n {documents}"),
-                ("human", "問題: {question}"),
-            ]
-        )
         route_prompt_classify = ChatPromptTemplate.from_messages(
             [
                 ("system", INSTRUCTIONCLASSIFY),
@@ -147,11 +146,6 @@ class RetrieveBot:
         structured_llm_router = self.llm.bind_tools(tools=[WebState, PlainState])
         question_router = route_prompt | structured_llm_router
         # Route LLM with tools use
-        structured_rag_plain_router = self.llm.bind_tools(tools=[RAGState, PlainState])
-        question_router_rag_or_plain = (
-            route_prompt_rag_or_plain | structured_rag_plain_router
-        )
-        # Route LLM with tools use
         structured_classify_router = self.llm.bind_tools(
             tools=[RAGState, PlainState, SqlState]
         )
@@ -162,7 +156,6 @@ class RetrieveBot:
             llm_chain,
             web_chain,
             question_router,
-            question_router_rag_or_plain,
             question_router_classify,
         )
 
@@ -315,7 +308,7 @@ class RetrieveBot:
             str: Next node to call
         """
 
-        print("---ROUTE QUESTION---")
+        logging.info("---ROUTE QUESTION---")
         question = state["question"]
         documents = state["documents"]
         query = state["query"]
@@ -328,21 +321,83 @@ class RetrieveBot:
                 "question": question,
             }
         )
-        print(result)
-        print(source)
         if len(source.tool_calls) == 0:
-            print("  -ROUTE TO PLAIN LLM-")
+            logging.info("  -ROUTE TO PLAIN LLM-")
             return "plain_feedback"
 
         if source.tool_calls[0]["name"] == "RAGState":
-            print("  -ROUTE TO RAG-")
+            logging.info("  -ROUTE TO RAG-")
             return "rag_generate"
         elif source.tool_calls[0]["name"] == "SqlState":
-            print("  -ROUTE TO SQL-")
+            logging.info("  -ROUTE TO SQL-")
             return "sql_feedback"
         else:
-            print("  -ROUTE TO PLAIN LLM-")
+            logging.info("  -ROUTE TO PLAIN LLM-")
             return "plain_feedback"
+
+    ### Edges ###
+    def route_web_test(self, state):
+        """
+        Route question to web search or RAG.
+
+        Args:
+            state (dict): The current graph state
+
+        Returns:
+            str: Next node to call
+        """
+
+        logging.info("---ROUTE QUESTION---")
+        question = state["question"]
+        source = self.question_router.invoke({"question": question})
+
+        if len(source.tool_calls) == 0:
+            logging.info("  -ROUTE TO PLAIN LLM-")
+            return "plain_feedback"
+
+        if source.tool_calls[0]["name"] == "WebState":
+            logging.info("  -ROUTE TO WEB SEARCH-")
+            return "web_search"
+
+        elif source.tool_calls[0]["name"] == "PlainState":
+            logging.info("  -ROUTE TO PLAIN LLM-")
+            return "plain_feedback"
+
+    def web_generate(self, state):
+        """
+        Generates a response using web search.
+
+        Args:
+            state (dict): The current graph state
+
+        Returns:
+            state (dict): New key added to state, generation, that contains web search generation
+        """
+        logging.info("---WEB GENERATE---")
+        question = state["question"]
+        documents = self.web_search_tool.invoke({"query": question})
+        documents = [doc["content"] for doc in documents]
+        # RAG generation
+        generation = self.web_chain.invoke(
+            {"documents": documents, "question": question}
+        )
+        return {"documents": documents, "question": question, "generation": generation}
+
+    def plain_answer(self, state):
+        """
+        Generate answer using the LLM without vectorstore.
+
+        Args:
+            state (dict): The current graph state
+
+        Returns:
+            state (dict): New key added to state, generation, that contains LLM generation
+        """
+
+        print("---GENERATE PLAIN ANSWER---")
+        question = state["question"]
+        generation = self.llm_chain.invoke({"question": question})
+        return {"question": question, "generation": generation}
 
     def write_query(self, state: State):
         """
@@ -383,7 +438,7 @@ class RetrieveBot:
             f"SQL Result: {state['result']}"
         )
         response = self.llm.invoke(prompt)
-        return {"answer": response.content}
+        return {"generation": response.content}
 
     def workflow(self, query: str):
         """
@@ -408,6 +463,8 @@ class RetrieveBot:
         workflow.add_node("rag_generate", self.rag_generate)  # generate in RAG mode
         workflow.add_node("sql_feedback", self.generate_answer)  # generate answer
         workflow.add_node("first_stage_end", self.first_stage_end)  # end of first stage
+        workflow.add_node("web_search", self.web_generate)  # web search
+        workflow.add_node("plain_feedback", self.plain_answer)  # plain answer
 
         workflow.add_edge(START, "write_query")
         workflow.add_edge("write_query", "execute_query")
@@ -423,7 +480,23 @@ class RetrieveBot:
             },
         )
 
-        compiled_app = workflow.compile()
-        output = compiled_app.invoke({"question": query})
+        workflow.add_conditional_edges(
+            "first_stage_end",
+            self.route_web_test,
+            {
+                "web_search": "web_search",
+                "plain_feedback": "plain_feedback",
+            },
+        )
+        workflow.add_edge("rag_generate", END)
+        workflow.add_edge("sql_feedback", END)
+        workflow.add_edge("web_search", END)
+        workflow.add_edge("plain_feedback", END)
 
-        return output
+        compiled_app = workflow.compile()
+        with get_openai_callback() as cb:
+            output = compiled_app.invoke({"question": query})
+            token.append(cb.total_tokens)
+            token.append(cb.prompt_tokens)
+            token.append(cb.completion_tokens)
+        return output["generation"], token
