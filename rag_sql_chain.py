@@ -13,6 +13,7 @@ from langchain_core.runnables.graph import MermaidDrawMethod
 from langchain_core.prompts import ChatPromptTemplate
 from langchain_core.output_parsers import StrOutputParser
 from langchain_ollama import ChatOllama
+from langchain_core.prompts import PromptTemplate
 from langgraph.graph import START, END, StateGraph
 from langchain_community.tools.tavily_search import TavilySearchResults
 from langchain_community.vectorstores import Chroma
@@ -33,6 +34,7 @@ from utils.prompt import (
     INSTRUCTIONWEBRAG,
     INSTRUCTIONCLASSIFY,
     INSTRUCTIONRAGGRADE,
+    SQLTEMPLATE
 )
 
 load_dotenv()
@@ -83,7 +85,7 @@ class RetrieveBot:
         self.pdf_reader = PyMuPDFLoader(pdf_file).load()
         self.document_embedding()
         self.llm = ChatOllama(model=model, base_url="http://localhost:11434")
-        self.query_prompt_template = hub.pull("langchain-ai/sql-query-system-prompt")
+        self.query_prompt_template = PromptTemplate.from_template(SQLTEMPLATE)
         self.db = SQLDatabase.from_uri(db_uri)
         (
             self.rag_chain,

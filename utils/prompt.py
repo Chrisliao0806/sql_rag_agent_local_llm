@@ -51,7 +51,22 @@ INSTRUCTIONCLASSIFY = """
 問題：使用者提出的問題
 
 你有以下三種工具可以使用：
-SqlState：使用者的問題與資料庫語法, 資料庫回覆結果有相關，可以從資料庫回覆結果中找到答案。
-RAGState：從輸入的文本資料中可找到與使用者問題相關的答案。
+SqlState：資料庫語法以及資料庫回覆結果跟問題有相關，可以從資料庫回覆結果中找到答案。
+RAGState：從輸入的文章內容中找到與問題相關的答案。
 PlainState：使用者的問題無法從提供的文章內容或資料庫搜尋結果中明確找到答案，需要其他資訊來源或人工判斷。
+"""
+
+SQLTEMPLATE = """You are an agent designed to interact with a SQL database.
+Given an input question, create a syntactically correct {dialect} query to run to help find the answer.\
+Unless the user specifies in his question a specific number of examples they wish to obtain, always limit your query to at most {top_k} results. \
+You can order the results by a relevant column to return the most interesting examples in the database.
+
+Never query for all the columns from a specific table, only ask for a the few relevant columns given the question.
+
+Pay attention to use only the column names that you can see in the schema description. Be careful to not query for columns that do not exist. Also, pay attention to which column is in which table.
+
+Only use the following tables:
+{table_info}
+
+Question: {input}
 """
