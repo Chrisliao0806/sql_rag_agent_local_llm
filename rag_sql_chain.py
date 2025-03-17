@@ -1,5 +1,6 @@
 import logging
 import os
+import re
 
 from dotenv import load_dotenv
 from langchain import hub
@@ -174,6 +175,13 @@ class RetrieveBot:
         """
         assert len(self.query_prompt_template.messages) == 1
         self.query_prompt_template.messages[0].pretty_print()
+        
+
+    def _clean_sql_string(self,sql_string):
+        sql_string = re.sub(r'```sql|```', '', sql_string)
+        sql_string = sql_string.replace('\\n', ' ')
+        sql_string = re.sub(r'\s+', ' ', sql_string)
+        return sql_string.strip()
 
     def document_embedding(self):
         """
@@ -454,12 +462,12 @@ class RetrieveBot:
                     "input": state["question"],
                 }
             )
-            structured_llm = self.llm.with_structured_output(QueryOutput)
-            result = structured_llm.invoke(prompt)
+            result = self.llm.invoke(prompt)
             print(result)
             if result is None:
                 return {"query": "查無結果"}
-            return {"query": result["query"]}
+            result = self._clean_sql_string(result.content)
+            return {"query": result}
         except Exception as e:
             logging.error("Error generating query: %s", e)
             return {"query": "查無結果"}
