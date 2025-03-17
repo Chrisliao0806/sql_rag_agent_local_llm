@@ -55,3 +55,10 @@ class WebState(BaseModel):
     """
 
     query: str = Field(description="使用網路搜尋時輸入的問題")
+    
+class GradeDocuments(BaseModel):
+    """
+    確認提取文章與問題是否有關(yes/no)
+    """
+
+    binary_score: str = Field(description="請問文章與問題是否相關。('yes' or 'no')")
