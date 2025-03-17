@@ -1,39 +1,37 @@
-import os
 import logging
-from dotenv import load_dotenv
+import os
 
+from dotenv import load_dotenv
 from langchain import hub
+from langchain.callbacks import get_openai_callback
 from langchain.text_splitter import RecursiveCharacterTextSplitter
 from langchain_community.document_loaders import PyMuPDFLoader
 from langchain_community.embeddings import HuggingFaceEmbeddings
-from langchain.callbacks import get_openai_callback
 from langchain_community.tools.sql_database.tool import QuerySQLDatabaseTool
-from langchain_community.utilities import SQLDatabase
-from langchain_core.runnables.graph import MermaidDrawMethod
-from langchain_core.prompts import ChatPromptTemplate
-from langchain_core.output_parsers import StrOutputParser
-from langchain_ollama import ChatOllama
-from langchain_core.prompts import PromptTemplate
-from langgraph.graph import START, END, StateGraph
 from langchain_community.tools.tavily_search import TavilySearchResults
+from langchain_community.utilities import SQLDatabase
 from langchain_community.vectorstores import Chroma
+from langchain_core.output_parsers import StrOutputParser
+from langchain_core.prompts import ChatPromptTemplate, PromptTemplate
+from langchain_core.runnables.graph import MermaidDrawMethod
+from langchain_ollama import ChatOllama
+from langgraph.graph import END, START, StateGraph
+
 from utils.choose_state import (
-    QueryOutput,
-    State,
-    RAGState,
-    PlainState,
-    WebState,
-    SqlState,
     GradeDocuments,
+    PlainState,
+    QueryOutput,
+    RAGState,
+    State,
+    WebState,
 )
-from utils.logger import setup_logging
 from utils.prompt import (
     INSTRUCTIONPLAIN,
     INSTRUCTIONRAG,
+    INSTRUCTIONRAGGRADE,
     INSTRUCTIONWEB,
     INSTRUCTIONWEBRAG,
-    INSTRUCTIONRAGGRADE,
-    SQLTEMPLATE
+    SQLTEMPLATE,
 )
 
 load_dotenv()
@@ -436,7 +434,7 @@ class RetrieveBot:
         else:
             print("  -ROUTE TO SQL -")
             return "sql_feedback"
-        
+
     def write_query(self, state: State):
         """
         Generates and executes a query based on the provided state.
@@ -470,10 +468,9 @@ class RetrieveBot:
         """Execute SQL query."""
         execute_query_tool = QuerySQLDatabaseTool(db=self.db)
         result = execute_query_tool.invoke(state["query"])
-        if 'Error' in result or result is None or result == "":
+        if "Error" in result or result is None or result == "":
             return {"result": "查無結果"}
         return {"result": result}
-    
 
     def generate_answer(self, state: State):
         """Answer question using retrieved information as context."""
