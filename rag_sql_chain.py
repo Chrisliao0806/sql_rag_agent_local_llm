@@ -32,7 +32,6 @@ from utils.prompt import (
     INSTRUCTIONRAG,
     INSTRUCTIONWEB,
     INSTRUCTIONWEBRAG,
-    INSTRUCTIONCLASSIFY,
     INSTRUCTIONRAGGRADE,
     SQLTEMPLATE
 )
@@ -92,7 +91,6 @@ class RetrieveBot:
             self.llm_chain,
             self.web_chain,
             self.question_router,
-            self.question_router_classify,
             self.retrieval_grader,
         ) = self._init_model()
         self.web_search_tool = TavilySearchResults(
@@ -131,15 +129,6 @@ class RetrieveBot:
                 ("human", "問題: {question}"),
             ]
         )
-        route_prompt_classify = ChatPromptTemplate.from_messages(
-            [
-                ("system", INSTRUCTIONCLASSIFY),
-                ("system", "文章內容: \n\n {documents}"),
-                ("system", "資料庫語法: \n\n {query_info}"),
-                ("system", "資料庫搜尋結果: \n\n {table_info}"),
-                ("human", "問題: {question}"),
-            ]
-        )
         grade_prompt = ChatPromptTemplate.from_messages(
             [
                 ("system", INSTRUCTIONRAGGRADE),
@@ -157,14 +146,8 @@ class RetrieveBot:
         # Route LLM with tools use
         structured_llm_router = self.llm.bind_tools(tools=[WebState, PlainState])
         question_router = route_prompt | structured_llm_router
-        # Route LLM with tools use
-        structured_classify_router = self.llm.bind_tools(
-            tools=[RAGState, PlainState, SqlState]
-        )
-        question_router_classify = route_prompt_classify | structured_classify_router
 
         structured_llm_grader = self.llm.with_structured_output(GradeDocuments)
-
         # 使用 LCEL 語法建立 chain
         retrieval_grader = grade_prompt | structured_llm_grader
         return (
@@ -172,7 +155,6 @@ class RetrieveBot:
             llm_chain,
             web_chain,
             question_router,
-            question_router_classify,
             retrieval_grader,
         )
 
@@ -345,45 +327,6 @@ class RetrieveBot:
         print("---FIRST STAGE END---")
         return {"question": state["question"]}
 
-    ### Edges ###
-    def route_first_stage_test(self, state):
-        """
-        Route question to web search or RAG.
-
-        Args:
-            state (dict): The current graph state
-
-        Returns:
-            str: Next node to call
-        """
-
-        logging.info("---ROUTE QUESTION---")
-        question = state["question"]
-        documents = state["documents"]
-        query = state["query"]
-        result = state["result"]
-        source = self.question_router_classify.invoke(
-            {
-                "documents": documents,
-                "query_info": query,
-                "table_info": result,
-                "question": question,
-            }
-        )
-        if len(source.tool_calls) == 0:
-            logging.info("  -ROUTE TO PLAIN LLM-")
-            return "plain_feedback"
-
-        if source.tool_calls[0]["name"] == "RAGState":
-            logging.info("  -ROUTE TO RAG-")
-            return "rag_generate"
-        elif source.tool_calls[0]["name"] == "SqlState":
-            logging.info("  -ROUTE TO SQL-")
-            return "sql_feedback"
-        else:
-            logging.info("  -ROUTE TO PLAIN LLM-")
-            return "plain_feedback"
-
     def route_retrieval(self, state):
         """
         Determines whether to generate an answer, or use websearch.
@@ -401,9 +344,9 @@ class RetrieveBot:
         if not filtered_documents:
             # All documents have been filtered check_relevance
             print(
-                "  -DECISION: ALL DOCUMENTS ARE NOT RELEVANT TO QUESTION, ROUTE TO WEB SEARCH-"
+                "  -DECISION: ALL DOCUMENTS ARE NOT RELEVANT TO QUESTION, ROUTE TO PLAIN ANSWER-"
             )
-            return "web_search"
+            return "plain_feedback"
         else:
             # We have relevant documents, so generate answer
             print("  -DECISION: GENERATE WITH RAG LLM-")
@@ -473,6 +416,27 @@ class RetrieveBot:
         generation = self.llm_chain.invoke({"question": question})
         return {"question": question, "generation": generation}
 
+    def route_sql_test(self, state):
+        """
+        Route question to SQL or RAG.
+
+        Args:
+            state (dict): The current graph state
+
+        Returns:
+            str: Next node to call
+        """
+
+        print("---ROUTE QUESTION---")
+
+        if state["result"] == "查無結果":
+            print("  -ROUTE TO RAG -")
+            return "rag_generate"
+
+        else:
+            print("  -ROUTE TO SQL -")
+            return "sql_feedback"
+        
     def write_query(self, state: State):
         """
         Generates and executes a query based on the provided state.
@@ -483,24 +447,33 @@ class RetrieveBot:
         Returns:
             dict: A dictionary containing the generated query under the key "query".
         """
-        prompt = self.query_prompt_template.invoke(
-            {
-                "dialect": self.db.dialect,
-                "top_k": 25,
-                "table_info": self.db.get_table_info(),
-                "input": state["question"],
-            }
-        )
-        structured_llm = self.llm.with_structured_output(QueryOutput)
-        result = structured_llm.invoke(prompt)
-        if result is None:
-            return {"query": "can not generate query"}
-        return {"query": result["query"]}
+        try:
+            prompt = self.query_prompt_template.invoke(
+                {
+                    "dialect": self.db.dialect,
+                    "top_k": 25,
+                    "table_info": self.db.get_table_info(),
+                    "input": state["question"],
+                }
+            )
+            structured_llm = self.llm.with_structured_output(QueryOutput)
+            result = structured_llm.invoke(prompt)
+            print(result)
+            if result is None:
+                return {"query": "查無結果"}
+            return {"query": result["query"]}
+        except Exception as e:
+            logging.error("Error generating query: %s", e)
+            return {"query": "查無結果"}
 
     def execute_query(self, state: State):
         """Execute SQL query."""
         execute_query_tool = QuerySQLDatabaseTool(db=self.db)
-        return {"result": execute_query_tool.invoke(state["query"])}
+        result = execute_query_tool.invoke(state["query"])
+        if 'Error' in result or result is None or result == "":
+            return {"result": "查無結果"}
+        return {"result": result}
+    
 
     def generate_answer(self, state: State):
         """Answer question using retrieved information as context."""
@@ -543,27 +516,23 @@ class RetrieveBot:
 
         workflow.add_edge(START, "write_query")
         workflow.add_edge("write_query", "execute_query")
-        workflow.add_edge("execute_query", "retrieve")
-
         workflow.add_conditional_edges(
-            "retrieve",
-            self.route_first_stage_test,
+            "execute_query",
+            self.route_sql_test,
             {
-                "rag_generate": "grade_documents",
+                "rag_generate": "retrieve",
                 "sql_feedback": "sql_feedback",
-                "plain_feedback": "first_stage_end",
             },
         )
-
+        workflow.add_edge("retrieve", "grade_documents")
         workflow.add_conditional_edges(
             "grade_documents",
             self.route_retrieval,
             {
                 "rag_generate": "rag_generate",
-                "web_search": "web_search",
+                "plain_feedback": "first_stage_end",
             },
         )
-
         workflow.add_conditional_edges(
             "first_stage_end",
             self.route_web_test,
