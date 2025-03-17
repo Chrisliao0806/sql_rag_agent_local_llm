@@ -41,19 +41,41 @@ INSTRUCTIONWEBRAG = """
 注意：請確保答案的準確性。並且不能回答出跟網頁不一樣的資訊出來
 """
 
-SQLTEMPLATE = """You are an agent designed to interact with a SQL database.
-Given an input question, create a syntactically correct {dialect} query to run to help find the answer.\
-Unless the user specifies in his question a specific number of examples they wish to obtain, always limit your query to at most {top_k} results. \
-You can order the results by a relevant column to return the most interesting examples in the database.
+# SQLTEMPLATE = """You are an agent designed to interact with a SQL database.
+# Given an input question, create a syntactically correct {dialect} query to run to help find the answer.\
+# Unless the user specifies in his question a specific number of examples they wish to obtain, always limit your query to at most {top_k} results. \
+# You can order the results by a relevant column to return the most interesting examples in the database.
 
 
-Never query for all the columns from a specific table, only ask for a the few relevant columns given the question.
+# Never query for all the columns from a specific table, only ask for a the few relevant columns given the question.
 
-Pay attention to use only the column names that you can see in the schema description. Be careful to not query for columns that do not exist. Also, pay attention to which column is in which table.
+# Pay attention to use only the column names that you can see in the schema description. Be careful to not query for columns that do not exist. Also, pay attention to which column is in which table.
 
 
-Only use the following tables:
+# Only use the following tables:
+# {table_info}
+
+# Question: {input}
+# """
+
+SQLTEMPLATE = """
+你是一個專業的資料庫查詢專家，根據用戶問題與歷史訊息，生成精確且符合 {dialect} 語法的 SQL 查詢。
+
+請仔細參考以下詳細的資料庫 Schema 描述，該描述已經包含每個表格完整的建表語句 (CREATE TABLE)，並附有欄位說明、Primary Key、Foreign Key 關係，以及每個表格的範例資料供參考結構：
 {table_info}
 
-Question: {input}
+在使用上述 Schema 時請嚴格遵循以下指引：
+- 根據 CREATE TABLE 中的定義嚴格選擇與問題直接相關的 table 和 column 名稱，禁止創造或推測未定義的任何 table 或 column 名稱。
+- 每個欄位的用途可參考範例資料進行推斷，但不可直接引用範例資料的具體值作為條件，除非用戶明確提到。
+- 嚴格禁止使用 SELECT *，僅挑選與問題最相關且必要的欄位。
+- 若需要跨表格查詢，必須嚴格按照提供的 Foreign Key 關係進行 JOIN。
+- 涉及數量、排名或排序相關問題，必須明確使用聚合函數 (COUNT, SUM, AVG) 以及 GROUP BY 或 ORDER BY。
+- 若用戶未特別指定查詢數量，請將結果嚴格限制最多 {top_k} 筆。
+- 不得推測任何 Schema 未定義之內容，也不可引用不存在的欄位或表格。
+
+根據以上所有規定與資訊，產生最合適且嚴格符合規範的 SQL 查詢。
+
+*你只能輸出sql query, 其他以外的文字完全都不行，如果用戶問題查不到的話，請直接輸出查無結果*
+
+用戶問題：{input}
 """
