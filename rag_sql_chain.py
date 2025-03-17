@@ -23,6 +23,7 @@ from utils.choose_state import (
     PlainState,
     WebState,
     SqlState,
+    GradeDocuments,
 )
 from utils.logger import setup_logging
 from utils.prompt import (
@@ -31,6 +32,7 @@ from utils.prompt import (
     INSTRUCTIONWEB,
     INSTRUCTIONWEBRAG,
     INSTRUCTIONCLASSIFY,
+    INSTRUCTIONRAGGRADE,
 )
 
 load_dotenv()
@@ -89,6 +91,7 @@ class RetrieveBot:
             self.web_chain,
             self.question_router,
             self.question_router_classify,
+            self.retrieval_grader,
         ) = self._init_model()
         self.web_search_tool = TavilySearchResults(
             include_answer=True,
@@ -135,6 +138,13 @@ class RetrieveBot:
                 ("human", "問題: {question}"),
             ]
         )
+        grade_prompt = ChatPromptTemplate.from_messages(
+            [
+                ("system", INSTRUCTIONRAGGRADE),
+                ("human", "文件: \n\n{documents}"),
+                ("human", "問題: {question}"),
+            ]
+        )
 
         # LLM & chain
         rag_chain = prompt_rag | self.llm | StrOutputParser()
@@ -151,12 +161,17 @@ class RetrieveBot:
         )
         question_router_classify = route_prompt_classify | structured_classify_router
 
+        structured_llm_grader = self.llm.with_structured_output(GradeDocuments)
+
+        # 使用 LCEL 語法建立 chain
+        retrieval_grader = grade_prompt | structured_llm_grader
         return (
             rag_chain,
             llm_chain,
             web_chain,
             question_router,
             question_router_classify,
+            retrieval_grader,
         )
 
     def _db_query(self, query: str):
@@ -255,6 +270,38 @@ class RetrieveBot:
         documents = self.retriever.invoke(question)
         return {"documents": documents, "question": question}
 
+    def retrieval_grade(self, state):
+        """
+        filter retrieved documents based on question.
+
+        Args:
+            state (dict):  The current state graph
+
+        Returns:
+            state (dict): New key added to state, documents, that contains list of related documents.
+        """
+
+        # Grade documents
+        print("---CHECK DOCUMENT RELEVANCE TO QUESTION---")
+
+        documents = state["documents"]
+        question = state["question"]
+
+        # Score each doc
+        filtered_docs = []
+        for d in documents:
+            score = self.retrieval_grader.invoke(
+                {"documents": d.page_content, "question": question}
+            )
+            grade = score.binary_score
+            if grade == "yes":
+                print("  -GRADE: DOCUMENT RELEVANT-")
+                filtered_docs.append(d)
+            else:
+                print("  -GRADE: DOCUMENT NOT RELEVANT-")
+                continue
+        return {"documents": filtered_docs, "question": question}
+
     def rag_generate(self, state):
         """
         Generates a response in RAG (Retrieval-Augmented Generation) mode.
@@ -334,6 +381,31 @@ class RetrieveBot:
         else:
             logging.info("  -ROUTE TO PLAIN LLM-")
             return "plain_feedback"
+
+    def route_retrieval(self, state):
+        """
+        Determines whether to generate an answer, or use websearch.
+
+        Args:
+            state (dict): The current graph state
+
+        Returns:
+            str: Binary decision for next node to call
+        """
+
+        print("---ROUTE RETRIEVAL---")
+        filtered_documents = state["documents"]
+
+        if not filtered_documents:
+            # All documents have been filtered check_relevance
+            print(
+                "  -DECISION: ALL DOCUMENTS ARE NOT RELEVANT TO QUESTION, ROUTE TO WEB SEARCH-"
+            )
+            return "web_search"
+        else:
+            # We have relevant documents, so generate answer
+            print("  -DECISION: GENERATE WITH RAG LLM-")
+            return "rag_generate"
 
     ### Edges ###
     def route_web_test(self, state):
@@ -465,6 +537,7 @@ class RetrieveBot:
         workflow.add_node("first_stage_end", self.first_stage_end)  # end of first stage
         workflow.add_node("web_search", self.web_generate)  # web search
         workflow.add_node("plain_feedback", self.plain_answer)  # plain answer
+        workflow.add_node("grade_documents", self.retrieval_grade)  # grade documents
 
         workflow.add_edge(START, "write_query")
         workflow.add_edge("write_query", "execute_query")
@@ -474,9 +547,18 @@ class RetrieveBot:
             "retrieve",
             self.route_first_stage_test,
             {
-                "rag_generate": "rag_generate",
+                "rag_generate": "grade_documents",
                 "sql_feedback": "sql_feedback",
                 "plain_feedback": "first_stage_end",
+            },
+        )
+
+        workflow.add_conditional_edges(
+            "grade_documents",
+            self.route_retrieval,
+            {
+                "rag_generate": "rag_generate",
+                "web_search": "web_search",
             },
         )
 
@@ -499,4 +581,15 @@ class RetrieveBot:
             token.append(cb.total_tokens)
             token.append(cb.prompt_tokens)
             token.append(cb.completion_tokens)
+
+        image_data = compiled_app.get_graph().draw_mermaid_png(
+            draw_method=MermaidDrawMethod.API,
+        )
+        FILE = "mermaid_diagram.png"
+        try:
+            with open(FILE, "wb") as f:
+                f.write(image_data)
+            print(f"image save: {FILE}")
+        except IOError as e:
+            print(f"image save error: {e}")
         return output["generation"], token
