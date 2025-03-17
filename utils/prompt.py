@@ -41,29 +41,16 @@ INSTRUCTIONWEBRAG = """
 注意：請確保答案的準確性。並且不能回答出跟網頁不一樣的資訊出來
 """
 
-INSTRUCTIONCLASSIFY = """
-你現在是一個問題分類助手，你的任務是根據使用者提出的問題，並結合提供的文章內容, 資料庫語法以及資料庫搜尋結果，判斷此問題應該透過下列哪一種方式來解答。
-
-你會有以下四種資訊：
-文章內容：從知識庫取得的相關文本內容
-資料庫語法：這是查詢sql使用的語法
-資料庫搜尋結果：這是用sql查詢得到的結果
-問題：使用者提出的問題
-
-你有以下三種工具可以使用：
-SqlState：資料庫語法以及資料庫回覆結果跟問題有相關，可以從資料庫回覆結果中找到答案。
-RAGState：從輸入的文章內容中找到與問題相關的答案。
-PlainState：使用者的問題無法從提供的文章內容或資料庫搜尋結果中明確找到答案，需要其他資訊來源或人工判斷。
-"""
-
 SQLTEMPLATE = """You are an agent designed to interact with a SQL database.
 Given an input question, create a syntactically correct {dialect} query to run to help find the answer.\
 Unless the user specifies in his question a specific number of examples they wish to obtain, always limit your query to at most {top_k} results. \
 You can order the results by a relevant column to return the most interesting examples in the database.
 
+
 Never query for all the columns from a specific table, only ask for a the few relevant columns given the question.
 
 Pay attention to use only the column names that you can see in the schema description. Be careful to not query for columns that do not exist. Also, pay attention to which column is in which table.
+
 
 Only use the following tables:
 {table_info}

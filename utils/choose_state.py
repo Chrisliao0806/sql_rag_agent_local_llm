@@ -63,3 +63,11 @@ class GradeDocuments(BaseModel):
     """
 
     binary_score: str = Field(description="請問文章與問題是否相關。('yes' or 'no')")
+    
+    
+class SQLGradeDocuments(BaseModel):
+    """
+    確認提取資料庫結果是否與問題是否有關(yes/no)
+    """
+
+    binary_score: str = Field(description="請問提取資料庫結果是否與問題是否有關。('yes' or 'no')")
