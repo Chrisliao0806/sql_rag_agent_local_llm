@@ -118,8 +118,8 @@ class RetrieveBot:
         prompt_web = ChatPromptTemplate.from_messages(
             [
                 ("system", INSTRUCTIONWEBRAG),
-                ("human", "問題: {question}"),
                 ("system", "網頁內容: \n\n {documents}"),
+                ("human", "問題: {question}"),
             ]
         )
         route_prompt = ChatPromptTemplate.from_messages(
@@ -175,12 +175,11 @@ class RetrieveBot:
         """
         assert len(self.query_prompt_template.messages) == 1
         self.query_prompt_template.messages[0].pretty_print()
-        
 
-    def _clean_sql_string(self,sql_string):
-        sql_string = re.sub(r'```sql|```', '', sql_string)
-        sql_string = sql_string.replace('\\n', ' ')
-        sql_string = re.sub(r'\s+', ' ', sql_string)
+    def _clean_sql_string(self, sql_string):
+        sql_string = re.sub(r"```sql|```", "", sql_string)
+        sql_string = sql_string.replace("\\n", " ")
+        sql_string = re.sub(r"\s+", " ", sql_string)
         return sql_string.strip()
 
     def document_embedding(self):
