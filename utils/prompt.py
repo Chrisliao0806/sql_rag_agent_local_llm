@@ -41,23 +41,6 @@ INSTRUCTIONWEBRAG = """
 注意：請確保答案的準確性。並且不能回答出跟網頁不一樣的資訊出來
 """
 
-# SQLTEMPLATE = """You are an agent designed to interact with a SQL database.
-# Given an input question, create a syntactically correct {dialect} query to run to help find the answer.\
-# Unless the user specifies in his question a specific number of examples they wish to obtain, always limit your query to at most {top_k} results. \
-# You can order the results by a relevant column to return the most interesting examples in the database.
-
-
-# Never query for all the columns from a specific table, only ask for a the few relevant columns given the question.
-
-# Pay attention to use only the column names that you can see in the schema description. Be careful to not query for columns that do not exist. Also, pay attention to which column is in which table.
-
-
-# Only use the following tables:
-# {table_info}
-
-# Question: {input}
-# """
-
 SQLTEMPLATE = """
 你是一個專業的資料庫查詢專家，根據用戶問題與歷史訊息，生成精確且符合 {dialect} 語法的 SQL 查詢。
 
@@ -78,4 +61,52 @@ SQLTEMPLATE = """
 *你只能輸出sql query, 其他以外的文字完全都不行，如果用戶問題查不到的話，請直接輸出查無結果*
 
 用戶問題：{input}
+"""
+
+SQLOUTPUTTEMPLATE="""
+## table name: Issue_Header
+
+| 欄位名稱               | 欄位用途描述                                                                                     |
+|-----------------------|--------------------------------------------------------------------------------------------------|
+| Region                | 地區(範例：HQ)                                                                                  |
+| Territory             | 管轄區(範例：TWN, CNA)                                                                          |
+| SubTerritory          | 子管轄區(範例：TWN3，華東)                                                                     |
+| DocNo                 | 詢問單號碼，唯一主鍵(範例：F190104002)                                                           |
+| Type                  | 問題類型(範例：CFQR, DOA)                                                                       |
+| Status                | 問題狀態(範例：FA Report, QA Report)                                                            |
+| PendingReason         | 等待原因，通常為空(範例：空值)                                                                 |
+| CustomerAttr          | 客戶屬性(範例：P, N)                                                                            |
+| EndCustomerAttr       | 最終客戶屬性(範例：N, P)                                                                        |
+| BU                     | 事業單位代碼(範例：FLASH, DRAM)                                                                 |
+| Subject               | 問題摘要(範例：讀不到HDD, item1不良原因，ITEM1~2不良原因)                                        |
+| Problem               | 具體問題描述(範例：讀不到HDD (請提供維修測試資料), 3ME2 GC issue*4, L2破損*1，Flash LBB過多鎖卡*6 ,NPF*1，ITEM1~2不良原因：不开机) |
+| BriefAnalysis         | 簡要分析(範例：2246XT gc issue，item1~12的具體不良原因描述)                                       |
+| SubmitDate            | 問題提交日期(範例：2019/1/4 16:28)                                                              |
+| ProgressDate          | 問題進度更新日期(範例：2019/1/4 16:28, 2019/1/19 10:48，2019/2/14 8:53)                          |
+| FA_Date               | FA報告日期(範例：2019/3/7 14:46, NULL)                                                          |
+| QA_Date               | QA報告日期(範例：NULL，2019/2/21 14:19，2019/2/14 8:53)                                          |
+| ERP_Flash_Type        | Flash類型(範例：MLC, SLC等)                                                                    |
+
+
+## table name: Issue_Item
+| 欄位名稱                   | 欄位用途描述                                                                          |
+|---------------------------|-------------------------------------------------------------------------------------|
+| DocNo                     | 詢問單號碼，與Issue_Header表的DocNo外鍵連接(範例：F190104002)                             |
+| InnodiskPN                | 品編号(範例：DES25-32GD72SWADN)                                                        |
+| SerialNo                  | 序列號(範例：BCA11602010290077, BCA11602010290006，BCA11602010290071)                    |
+| RootCause1                | 根本原因1(範例：FW)                                                                   |
+| RootCause2                | 根本原因2(範例：SMI GC issue)                                                          |
+| Remark                    | 備註(範例：SMI GC issue)                                                               |
+| ERP_Interface             | 接口類型(範例：SATA, PCIe等)                                                           |
+| Flash_DecodeController    | Flash控制器代碼(範例：SMI2246XT)                                                        |
+| Flash_ControllerCode      | Flash控制器編碼(範例：D72)                                                             |
+| ERP_Family                | 家族(範例：SSD, HDD等)                                                                 |
+| ERP_Productline           | 產品線(範例：InnoLite)                                                                 |
+| ERP_Flash_Type            | Flash類型(範例：MLC, TLC等)                                                            |
+| DRAM_DIMM_Type            | DRAM DIMM類型(範例：DDR3, DDR4等，本例中未填寫)                                          |
+| DRAM_Decode_IC_Data_Rate  | DRAM IC數據速率(範例：本例中未填寫)                                                     |
+| DRAM_Decode_DIMM_Density  | DRAM DIMM密度(範例：本例中未填寫)                                                       |
+| DRAM_Decode_IC_Brand      | DRAM IC品牌(範例：Micron, Samsung等，本例中未填寫)                                       |
+| DRAM_Decode_IC_Config     | DRAM IC配置(範例：8Gb x 16/8/4等，本例中未填寫)                                         |
+| DRAM_Decode_Memory_Type   | DRAM記憶體類型(範例：S25, S35等)                                                        |
 """
