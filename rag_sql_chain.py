@@ -398,11 +398,16 @@ class RetrieveBot:
         logging.info("---WEB GENERATE---")
         question = state["question"]
         documents = self.web_search_tool.invoke({"query": question})
+        url = [doc["url"] for doc in documents]
         documents = [doc["content"] for doc in documents]
         # RAG generation
         generation = self.web_chain.invoke(
             {"documents": documents, "question": question}
         )
+        data_source = "資料來源:\n"
+        for item in url:
+            data_source += f" - {item} \n"
+        generation = f"{generation}\n{data_source}"
         return {"documents": documents, "question": question, "generation": generation}
 
     def plain_answer(self, state):
